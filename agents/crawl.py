@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from models import ResearchState
-from tools.fetch import fetch_url
+from tools.fetch import fetch_html, fetch_url
 from tools.parse import parse_html
 
 
@@ -16,14 +16,14 @@ def run_crawl(state: ResearchState) -> ResearchState:
 		if not url:
 			continue
 		try:
-			html = fetch_url(url)
-			parsed = parse_html(html)
+			fetch_result = fetch_html(url, mode=str(result.get("fetch_mode", "auto")))
+			parsed = parse_html(fetch_result.html)
 			documents.append(
 				{
 					"url": url,
 					"title": parsed.get("title") or result.get("title", ""),
 					"content": parsed.get("content", ""),
-					"source": "crawl",
+					"source": fetch_result.mode,
 					"search_snippet": result.get("snippet", ""),
 				}
 			)
