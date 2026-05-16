@@ -6,7 +6,7 @@ from html import escape
 from typing import Any
 
 from fastapi import FastAPI, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 
 from orchestrator import Orchestrator
 from services.snapshot import snapshot_state
@@ -144,6 +144,11 @@ def api_search(query: str = Query(..., min_length=1)) -> dict[str, Any]:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> Response:
+    return Response(status_code=204)
 
 
 def handle_http_query(user_query: str) -> dict:

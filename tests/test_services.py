@@ -4,7 +4,7 @@ import time
 
 from services.snapshot import restore_state, snapshot_state
 from tools.cache import clear_cache, get_cached, set_cached
-from tools.rate_limit import allow_request, reset_rate_limits
+from tools.rate_limit import allow_request, get_rate_limit_state, remaining_requests, reset_rate_limits
 
 
 def test_cache_expiration():
@@ -20,6 +20,11 @@ def test_rate_limit_window():
 	assert allow_request("example", limit=2, window_seconds=60) is True
 	assert allow_request("example", limit=2, window_seconds=60) is True
 	assert allow_request("example", limit=2, window_seconds=60) is False
+	state = get_rate_limit_state("example", limit=2, window_seconds=60)
+	assert state["limit"] == 2
+	assert state["active_requests"] == 2
+	assert state["remaining_requests"] == 0
+	assert remaining_requests("example", limit=2, window_seconds=60) == 0
 
 
 def test_snapshot_and_restore():

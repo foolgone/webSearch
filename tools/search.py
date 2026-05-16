@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Protocol
-from urllib.parse import quote_plus, urlparse
+from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -35,6 +35,21 @@ def _looks_like_url(value: str) -> bool:
     return bool(parsed.scheme and parsed.netloc)
 
 
+def _normalize_result_url(url: str) -> str:
+    candidate = url.strip()
+    if candidate.startswith("//"):
+        candidate = f"https:{candidate}"
+
+    parsed = urlparse(candidate)
+    if parsed.netloc.endswith("duckduckgo.com") and parsed.path.startswith("/l/"):
+        query = parse_qs(parsed.query)
+        uddg_values = query.get("uddg", [])
+        if uddg_values:
+            return unquote(uddg_values[0])
+
+    return candidate
+
+
 class DuckDuckGoHTMLSearchProvider:
     def search(self, query: str) -> SearchBatch:
         try:
@@ -55,8 +70,10 @@ class DuckDuckGoHTMLSearchProvider:
                 link = card.select_one("a.result__a")
                 if not link:
                     continue
-                url = link.get("href", "").strip()
+                url = _normalize_result_url(link.get("href", ""))
                 if not url or url in seen:
+                    continue
+                if urlparse(url).netloc.endswith("duckduckgo.com"):
                     continue
                 seen.add(url)
                 snippet_node = card.select_one("a.result__snippet, div.result__snippet")

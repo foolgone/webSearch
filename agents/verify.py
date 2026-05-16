@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from models import ResearchState
+from tools.citations import build_citation, dedupe_citations
 
 
 def _evidence_matches(summary: dict[str, object], document: dict[str, object]) -> tuple[str, str]:
@@ -49,14 +50,9 @@ def run_verify(state: ResearchState) -> ResearchState:
 				"notes": notes,
 			}
 		)
-		citations.append(
-			{
-				"url": url,
-				"location": "body",
-				"note": notes,
-			}
-		)
+		citations.append(build_citation(url, location="body"))
+		citations[-1]["note"] = notes
 
 	state["verified_results"] = verified_results
-	state["citations"] = citations
+	state["citations"] = dedupe_citations(citations)
 	return state

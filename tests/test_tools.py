@@ -118,6 +118,61 @@ def test_search_web_uses_injected_provider(monkeypatch):
     assert first[0]["title"] == "Injected provider topic"
 
 
+def test_search_web_decodes_duckduckgo_redirect_urls(monkeypatch):
+        clear_cache()
+
+        html = """
+        <html>
+            <body>
+                <div class="result">
+                    <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Farticle&amp;rut=abc">Example</a>
+                    <a class="result__snippet">Snippet</a>
+                </div>
+            </body>
+        </html>
+        """
+
+        monkeypatch.setattr(
+                search_tool.httpx,
+                "get",
+                lambda url, params=None, headers=None, timeout=None, follow_redirects=None: FakeResponse(html),
+        )
+
+        results = search_tool.search_web("example topic")
+
+        assert results[0]["url"] == "https://example.com/article"
+
+
+def test_search_web_filters_duckduckgo_internal_links(monkeypatch):
+        clear_cache()
+
+        html = """
+        <html>
+            <body>
+                <div class="result">
+                    <a class="result__a" href="//duckduckgo.com/about">About DuckDuckGo</a>
+                    <a class="result__snippet">Snippet</a>
+                </div>
+                <div class="result">
+                    <a class="result__a" href="https://example.com/keep">Keep Me</a>
+                    <a class="result__snippet">Snippet</a>
+                </div>
+            </body>
+        </html>
+        """
+
+        monkeypatch.setattr(
+                search_tool.httpx,
+                "get",
+                lambda url, params=None, headers=None, timeout=None, follow_redirects=None: FakeResponse(html),
+        )
+
+        results = search_tool.search_web("example topic")
+
+        assert len(results) == 1
+        assert results[0]["url"] == "https://example.com/keep"
+
+
 def test_fetch_html_routes_to_static_by_default(monkeypatch):
     monkeypatch.setattr("tools.fetch.fetch_url", lambda url, timeout=20: "<html><title>Static</title><body>Static page</body></html>")
     monkeypatch.setattr("tools.fetch.fetch_dynamic_url", lambda url, timeout=20: (_ for _ in ()).throw(AssertionError("dynamic fetch should not be used")))

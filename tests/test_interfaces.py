@@ -14,6 +14,13 @@ def test_health_endpoint():
 	assert response.json() == {"status": "ok"}
 
 
+def test_favicon_route_exists():
+	client = TestClient(app)
+	response = client.get("/favicon.ico")
+
+	assert response.status_code == 204
+
+
 def test_web_ui_renders_html(monkeypatch):
 	client = TestClient(app)
 	monkeypatch.setattr(
@@ -32,8 +39,9 @@ def test_web_ui_renders_html(monkeypatch):
 
 	assert response.status_code == 200
 	assert "Research Report" in response.text
-	assert "Tasks" in response.text
-	assert "Reflection" in response.text
+	assert "任务" in response.text
+	assert "反思" in response.text
+	assert "最终报告" in response.text
 
 
 def test_json_api_returns_state(monkeypatch):
