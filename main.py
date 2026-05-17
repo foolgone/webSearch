@@ -6,6 +6,7 @@ import argparse
 
 import uvicorn
 
+from services.benchmark import format_benchmark_report, run_benchmark
 from interface.http_app import build_http_app
 from orchestrator import Orchestrator
 
@@ -14,12 +15,18 @@ def main() -> None:
 	parser = argparse.ArgumentParser(description="webSearch 原型")
 	parser.add_argument("query", nargs="*", help="CLI 模式下的研究问题")
 	parser.add_argument("--web", action="store_true", help="启动 FastAPI Web 界面")
+	parser.add_argument("--benchmark", action="store_true", help="运行固定评测基准并退出")
 	parser.add_argument("--host", default="127.0.0.1")
 	parser.add_argument("--port", type=int, default=8000)
 	args = parser.parse_args()
 
 	if args.web:
 		uvicorn.run(build_http_app(), host=args.host, port=args.port, reload=False)
+		return
+
+	if args.benchmark:
+		results = run_benchmark()
+		print(format_benchmark_report(results))
 		return
 
 	orchestrator = Orchestrator()

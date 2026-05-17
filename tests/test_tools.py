@@ -61,8 +61,38 @@ def test_search_web_caches_network_fallback(monkeypatch):
     second = search_tool.search_web("network issue")
 
     assert first == second
-    assert len(calls) == 1
+    assert len(calls) == 3
     assert "Search fallback used because network search failed" in first[0]["snippet"]
+
+
+def test_search_web_recovers_after_transient_failure(monkeypatch):
+    clear_cache()
+    calls: list[str] = []
+
+    html = """
+    <html>
+      <body>
+        <div class="result">
+          <a class="result__a" href="https://example.com/a">Example A</a>
+          <a class="result__snippet">Snippet A</a>
+        </div>
+      </body>
+    </html>
+    """
+
+    def fake_get(url, params=None, headers=None, timeout=None, follow_redirects=None):
+        calls.append(params["q"])
+        if len(calls) < 2:
+            request = httpx.Request("GET", url)
+            raise httpx.ConnectError("boom", request=request)
+        return FakeResponse(html)
+
+    monkeypatch.setattr(search_tool.httpx, "get", fake_get)
+
+    results = search_tool.search_web("transient issue")
+
+    assert len(calls) == 2
+    assert results[0]["url"] == "https://example.com/a"
 
 
 def test_search_web_skips_cache_for_direct_urls(monkeypatch):
@@ -191,6 +221,24 @@ def test_fetch_html_routes_to_dynamic_when_forced(monkeypatch):
 
     assert result.mode == "dynamic"
     assert "Dynamic page" in result.html
+
+
+def test_fetch_url_recovers_after_transient_failure(monkeypatch):
+    calls: list[str] = []
+
+    def fake_get(url, headers=None, timeout=None, follow_redirects=None):
+        calls.append(url)
+        if len(calls) < 2:
+            request = httpx.Request("GET", url)
+            raise httpx.ConnectError("boom", request=request)
+        return FakeResponse("<html><body>Recovered</body></html>")
+
+    monkeypatch.setattr(fetch_module.httpx, "get", fake_get)
+
+    html = fetch_module.fetch_url("https://example.com/article")
+
+    assert len(calls) == 2
+    assert "Recovered" in html
 
 
 def test_fetch_html_routes_to_dynamic_for_configured_domains(monkeypatch):

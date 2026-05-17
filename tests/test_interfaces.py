@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from interface.http_app import app
 from interface import mcp_app
+from services.state_store import InMemoryStateStore
 
 
 def test_health_endpoint():
@@ -67,6 +68,56 @@ def test_json_api_returns_state(monkeypatch):
 	assert body["query"] == "demo"
 	assert body["rounds"] == 2
 	assert body["final_report"].startswith("Research Report")
+	assert "run_id" in body
+
+
+def test_run_lookup_and_resume_endpoints(monkeypatch):
+	client = TestClient(app)
+	store = InMemoryStateStore()
+	run_id = "run-123"
+	store.save_checkpoint(
+		run_id,
+		"Reflection",
+		{
+			"run_id": run_id,
+			"user_query": "demo",
+			"_round": 1,
+			"_workflow_stage": "Reflection",
+			"tasks": ["Task 1"],
+			"search_queries": ["demo"],
+			"search_results": [],
+			"documents": [],
+			"summaries": [],
+			"verified_results": [],
+			"reflection": {"gap": "None", "next_action": "Finalize", "should_continue": False, "failed_urls": []},
+			"final_report": "Research Report\nQuery: demo",
+			"citations": [],
+			"telemetry": {},
+		},
+	)
+
+	class StubOrchestrator:
+		def __init__(self) -> None:
+			self.state_store = store
+
+		def run(self, user_query: str, state=None, resume_run_id: str | None = None):
+			loaded = self.state_store.load_latest(resume_run_id or run_id)
+			assert loaded is not None
+			loaded = dict(loaded)
+			loaded["final_report"] = "Research Report\nQuery: demo\nResumed"
+			loaded["_workflow_stage"] = "Complete"
+			return loaded
+
+	monkeypatch.setattr("interface.http_app._get_orchestrator", lambda: StubOrchestrator())
+
+	lookup = client.get(f"/api/runs/{run_id}")
+	assert lookup.status_code == 200
+	assert lookup.json()["run_id"] == run_id
+
+	resumed = client.post(f"/api/runs/{run_id}/resume", params={"query": "demo"})
+	assert resumed.status_code == 200
+	assert resumed.json()["_workflow_stage"] == "Complete"
+	assert "Resumed" in resumed.json()["final_report"]
 
 
 def test_mcp_tools_and_call_path(monkeypatch):

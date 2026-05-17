@@ -8,6 +8,7 @@ from typing import Any, TypedDict
 
 class ResearchState(TypedDict, total=False):
 	user_query: str
+	run_id: str
 	tasks: list[str]
 	search_queries: list[str]
 	search_results: list[dict[str, Any]]
@@ -15,8 +16,10 @@ class ResearchState(TypedDict, total=False):
 	summaries: list[dict[str, Any]]
 	verified_results: list[dict[str, Any]]
 	reflection: dict[str, Any]
+	quality_control: dict[str, Any]
 	final_report: str
 	citations: list[dict[str, Any]]
+	telemetry: dict[str, Any]
 
 
 @dataclass(slots=True)

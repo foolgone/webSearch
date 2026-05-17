@@ -9,6 +9,8 @@ from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 import httpx
 from bs4 import BeautifulSoup
 
+from config import settings
+from services.retry import retry_operation
 from tools.cache import get_cached, set_cached
 
 
@@ -53,12 +55,20 @@ def _normalize_result_url(url: str) -> str:
 class DuckDuckGoHTMLSearchProvider:
     def search(self, query: str) -> SearchBatch:
         try:
-            response = httpx.get(
-                DDG_SEARCH_URL,
-                params={"q": query},
-                headers={"User-Agent": "webSearch/0.1"},
-                timeout=20,
-                follow_redirects=True,
+            response = retry_operation(
+                "duckduckgo-search",
+                lambda: httpx.get(
+                    DDG_SEARCH_URL,
+                    params={"q": query},
+                    headers={"User-Agent": settings.user_agent},
+                    timeout=settings.request_timeout,
+                    follow_redirects=True,
+                ),
+                attempts=max(1, settings.retry_attempts),
+                base_delay_seconds=settings.retry_backoff_seconds,
+                backoff_multiplier=settings.retry_backoff_multiplier,
+                stage="Search",
+                retry_if=lambda exc: isinstance(exc, httpx.HTTPError),
             )
             response.raise_for_status()
 
@@ -89,7 +99,7 @@ class DuckDuckGoHTMLSearchProvider:
 
             if results:
                 return SearchBatch(results=results, ttl_seconds=3600)
-        except httpx.RequestError as exc:
+        except httpx.HTTPError as exc:
             return SearchBatch(
                 results=[
                     {

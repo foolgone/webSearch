@@ -5,6 +5,7 @@ from __future__ import annotations
 from models import ResearchState
 from config import settings
 from services.model_adapter import ModelMessage, create_model_adapter
+from services.retry import retry_operation
 
 
 def _split_sentences(content: str) -> list[str]:
@@ -20,11 +21,18 @@ def run_summarize(state: ResearchState) -> ResearchState:
 	for document in documents:
 		content = document.get("content", "").strip()
 		title = document.get("title", "").strip()
-		response = adapter.complete(
-			[
-				ModelMessage(role="user", content=f"TITLE: {title}\nCONTENT: {content}"),
-			],
-			system_prompt="Summarize agent",
+		response = retry_operation(
+			"summarize-complete",
+			lambda: adapter.complete(
+				[
+					ModelMessage(role="user", content=f"TITLE: {title}\nCONTENT: {content}"),
+				],
+				system_prompt="Summarize agent",
+			),
+			attempts=max(1, settings.retry_attempts),
+			base_delay_seconds=settings.retry_backoff_seconds,
+			backoff_multiplier=settings.retry_backoff_multiplier,
+			stage="Summarize",
 		)
 		payload = response.raw if isinstance(response.raw, dict) else {}
 		bullets = list(payload.get("bullets", []))

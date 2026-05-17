@@ -5,24 +5,33 @@ from __future__ import annotations
 from html import escape
 from typing import Any
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
 
 from orchestrator import Orchestrator
 from services.snapshot import snapshot_state
+from services.state_store import StateStore
 
 
 app = FastAPI(title="webSearch", version="0.1.0")
 
 
+def _get_orchestrator() -> Orchestrator:
+    return Orchestrator()
+
+
 def _run_query(user_query: str) -> dict[str, Any]:
-	orchestrator = Orchestrator()
-	state = orchestrator.run(user_query)
-	return snapshot_state(state)
+    orchestrator = _get_orchestrator()
+    state = orchestrator.run(user_query)
+    return snapshot_state(state)
+
+
+def _get_state_store() -> StateStore:
+    return _get_orchestrator().state_store
 
 
 def _render_counts(state: dict[str, Any]) -> str:
-	return f"""
+    return f"""
 <div class="metrics">
     <div class="metric"><span>轮次</span><strong>{state.get('_round', 0)}</strong></div>
     <div class="metric"><span>任务</span><strong>{len(state.get('tasks', []))}</strong></div>
@@ -33,12 +42,12 @@ def _render_counts(state: dict[str, Any]) -> str:
 
 
 def _render_reflection(state: dict[str, Any]) -> str:
-	reflection = state.get("reflection", {})
-	if not isinstance(reflection, dict):
-		reflection = {"gap": str(reflection), "next_action": "", "failed_urls": []}
-	failed_urls = reflection.get("failed_urls", [])
-	failed_urls_text = ", ".join(failed_urls) if isinstance(failed_urls, list) and failed_urls else "None"
-	return f"""
+    reflection = state.get("reflection", {})
+    if not isinstance(reflection, dict):
+        reflection = {"gap": str(reflection), "next_action": "", "failed_urls": []}
+    failed_urls = reflection.get("failed_urls", [])
+    failed_urls_text = ", ".join(failed_urls) if isinstance(failed_urls, list) and failed_urls else "None"
+    return f"""
 <section class="panel">
     <h2>反思</h2>
     <ul>
@@ -52,8 +61,8 @@ def _render_reflection(state: dict[str, Any]) -> str:
 
 
 def _render_report(state: dict[str, Any]) -> str:
-	report = state.get("final_report", "")
-	return f"""
+    report = state.get("final_report", "")
+    return f"""
 <section class="panel">
     <h2>最终报告</h2>
     <pre>{escape(str(report))}</pre>
@@ -62,7 +71,7 @@ def _render_report(state: dict[str, Any]) -> str:
 
 
 def render_page(query: str = "", body_html: str = "") -> str:
-	return f"""
+    return f"""
 <!doctype html>
 <html lang="en">
 <head>
@@ -110,7 +119,7 @@ def render_page(query: str = "", body_html: str = "") -> str:
 
 @app.get("/", response_class=HTMLResponse)
 def home() -> HTMLResponse:
-	return HTMLResponse(render_page())
+    return HTMLResponse(render_page())
 
 
 @app.get("/search", response_class=HTMLResponse)
@@ -127,18 +136,37 @@ def search(query: str = Query(..., min_length=1)) -> HTMLResponse:
 
 @app.get("/api/search")
 def api_search(query: str = Query(..., min_length=1)) -> dict[str, Any]:
-	state = _run_query(query)
-	return {
-		"query": query,
-		"rounds": state.get("_round", 0),
-		"tasks": state.get("tasks", []),
-		"search_results": state.get("search_results", []),
-		"documents": state.get("documents", []),
-		"summaries": state.get("summaries", []),
-		"verified_results": state.get("verified_results", []),
-		"reflection": state.get("reflection", {}),
-		"final_report": state.get("final_report", ""),
-	}
+    state = _run_query(query)
+    return {
+        "run_id": state.get("run_id", ""),
+        "query": query,
+        "rounds": state.get("_round", 0),
+        "tasks": state.get("tasks", []),
+        "search_results": state.get("search_results", []),
+        "documents": state.get("documents", []),
+        "summaries": state.get("summaries", []),
+        "verified_results": state.get("verified_results", []),
+        "reflection": state.get("reflection", {}),
+        "final_report": state.get("final_report", ""),
+    }
+
+
+@app.get("/api/runs/{run_id}")
+def get_run(run_id: str) -> dict[str, Any]:
+    state = _get_state_store().load_latest(run_id)
+    if not state:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return snapshot_state(state)
+
+
+@app.post("/api/runs/{run_id}/resume")
+def resume_run(run_id: str, query: str = Query("", min_length=0)) -> dict[str, Any]:
+    orchestrator = _get_orchestrator()
+    state = orchestrator.state_store.load_latest(run_id)
+    if not state:
+        raise HTTPException(status_code=404, detail="Run not found")
+    resumed = orchestrator.run(user_query=query or str(state.get("user_query", "")), resume_run_id=run_id)
+    return snapshot_state(resumed)
 
 
 @app.get("/health")
@@ -152,7 +180,7 @@ def favicon() -> Response:
 
 
 def handle_http_query(user_query: str) -> dict:
-	return _run_query(user_query)
+    return _run_query(user_query)
 
 
 def build_http_app() -> FastAPI:

@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import httpx
 
 from config import settings
+from services.retry import retry_operation
 
 
 DEFAULT_HEADERS = {
@@ -98,18 +99,34 @@ def _html_looks_dynamic(html: str) -> bool:
 
 
 def fetch_url(url: str, timeout: int = 20) -> str:
-    response = httpx.get(
-        url,
-        headers=DEFAULT_HEADERS,
-        timeout=timeout,
-        follow_redirects=True,
+    response = retry_operation(
+        "static-fetch",
+        lambda: httpx.get(
+            url,
+            headers=DEFAULT_HEADERS,
+            timeout=timeout,
+            follow_redirects=True,
+        ),
+        attempts=max(1, settings.retry_attempts),
+        base_delay_seconds=settings.retry_backoff_seconds,
+        backoff_multiplier=settings.retry_backoff_multiplier,
+        stage="Crawl",
+        retry_if=lambda exc: isinstance(exc, httpx.HTTPError),
     )
     response.raise_for_status()
     return response.text
 
 
 def fetch_dynamic_url(url: str, timeout: int = 20) -> str:
-    return _dynamic_fetcher(url, timeout)
+    return retry_operation(
+        "dynamic-fetch",
+        lambda: _dynamic_fetcher(url, timeout),
+        attempts=max(1, settings.retry_attempts),
+        base_delay_seconds=settings.retry_backoff_seconds,
+        backoff_multiplier=settings.retry_backoff_multiplier,
+        stage="Crawl",
+        retry_if=lambda exc: not isinstance(exc, (NotImplementedError, ValueError, TypeError)),
+    )
 
 
 def fetch_html(url: str, timeout: int = 20, mode: str = "auto") -> FetchResult:

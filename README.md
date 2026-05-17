@@ -19,6 +19,8 @@ webSearch 是一个小型的多智能体 research 原型，用来搜索网页、
 - 支持 JSON API，方便集成和调试
 - 支持多轮执行，并由 Reflection 决定是否继续
 - 提供共享缓存、限流、快照、日志和配置能力
+- 提供运行级可观测性，包括 run_id、阶段耗时和结构化事件
+- 提供固定 benchmark 入口，方便做输出结构和回归检查
 - 最终报告以人类可读文本输出，不直接展示原始 JSON
 
 ## 技术基石对照
@@ -62,6 +64,8 @@ python -m pip install -e .
 - `WEBSEARCH_REQUEST_TIMEOUT`
 - `WEBSEARCH_MAX_CONCURRENCY`
 - `WEBSEARCH_USER_AGENT`
+- `WEBSEARCH_POSTGRES_DSN`
+- `WEBSEARCH_POSTGRES_SCHEMA`
 
 ## 使用方法
 
@@ -83,11 +87,19 @@ python main.py --web --host 127.0.0.1 --port 8000
 websearch "example topic"
 ```
 
+运行固定 benchmark：
+
+```bash
+python main.py --benchmark
+```
+
 ## HTTP 接口
 
 - `GET /` - Web UI 首页
 - `GET /search?query=...` - 运行工作流并以 HTML 渲染报告
 - `GET /api/search?query=...` - 以 JSON 返回工作流状态
+- `GET /api/runs/{run_id}` - 查询某次运行的最新 checkpoint
+- `POST /api/runs/{run_id}/resume?query=...` - 基于最新 checkpoint 恢复并继续执行
 - `GET /health` - 健康检查
 
 ## 项目结构
