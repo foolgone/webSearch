@@ -12,13 +12,16 @@ webSearch 是一个小型的多智能体 research 原型，用来搜索网页、
 
 所有 agent 共享同一个 `ResearchState`，编排器负责执行循环、状态快照和最终报告组装。
 
+当前版本已经补齐了运行态持久化能力：每次运行都会写入 PostgreSQL checkpoint，Web API 也支持按 `run_id` 查询最新状态并继续恢复执行。
+
 ## 功能
 
 - 支持 CLI 模式，适合快速跑一轮研究
 - 支持 FastAPI Web UI，方便在浏览器里使用
 - 支持 JSON API，方便集成和调试
+- 支持按 `run_id` 查询运行状态，并从最新 checkpoint 恢复执行
 - 支持多轮执行，并由 Reflection 决定是否继续
-- 提供共享缓存、限流、快照、日志和配置能力
+- 提供共享缓存、限流、快照、日志、配置和运行状态持久化能力
 - 提供运行级可观测性，包括 run_id、阶段耗时和结构化事件
 - 提供固定 benchmark 入口，方便做输出结构和回归检查
 - 最终报告以人类可读文本输出，不直接展示原始 JSON
@@ -31,13 +34,15 @@ webSearch 是一个小型的多智能体 research 原型，用来搜索网页、
 | --- | --- | --- | --- |
 | LangGraph | 否 | 暂未接入 | 当前用的是自定义的轻量工作流图 [graph.py](graph.py)；如果后续需要更复杂编排，可以再迁移。 |
 | FastAPI | 是 | Web UI、JSON API | 用于提供浏览器界面和接口，见 [interface/http_app.py](interface/http_app.py)。 |
+| PostgreSQL | 是 | 运行状态持久化、checkpoint、恢复 | 用于保存每次运行的阶段快照和最新状态，见 [services/state_store.py](services/state_store.py)。 |
 | OpenAI API | 否 | 暂未接入 | 目前没有直接调用 OpenAI API，agent 逻辑仍是本地实现。 |
 | Tavily | 否 | 暂未接入 | 当前搜索使用的是本地 `httpx` + DuckDuckGo HTML 抓取，不依赖 Tavily。 |
 | Crawl4AI | 否 | 暂未接入 | 当前抓取与正文提取由 `httpx` 和 `BeautifulSoup4` 完成。 |
 | Beautiful Soup | 是 | HTML 解析、正文提取 | 用于清洗和抽取网页正文，见 [tools/parse.py](tools/parse.py)。 |
+| psycopg | 是 | PostgreSQL 访问 | 用于将运行 checkpoint 写入数据库，见 [services/state_store.py](services/state_store.py)。 |
 | Docker | 暂未接入项目代码 | 运行环境可选项 | 目前仓库里还没有 Dockerfile 或容器部署脚本，但可以后续补充。 |
 
-如果按“当前可运行版本”来总结，这个项目的核心基石是：Python、FastAPI、httpx、BeautifulSoup4、pytest、setuptools，以及自定义编排层。那些更偏平台化或商业化的组件，比如 LangGraph、OpenAI API、Tavily、Crawl4AI，目前还属于计划参考，不是已落地依赖。
+如果按“当前可运行版本”来总结，这个项目的核心基石是：Python、FastAPI、httpx、BeautifulSoup4、psycopg、pytest、setuptools，以及自定义编排层。那些更偏平台化或商业化的组件，比如 LangGraph、OpenAI API、Tavily、Crawl4AI，目前还属于计划参考，不是已落地依赖。
 
 ## 环境要求
 
@@ -66,6 +71,8 @@ python -m pip install -e .
 - `WEBSEARCH_USER_AGENT`
 - `WEBSEARCH_POSTGRES_DSN`
 - `WEBSEARCH_POSTGRES_SCHEMA`
+
+其中 `WEBSEARCH_POSTGRES_DSN` 用于开启运行状态持久化；未配置时，系统会退回为内存级的空实现，不影响本地演示。
 
 ## 使用方法
 
@@ -106,9 +113,26 @@ python main.py --benchmark
 
 - `agents/` - Planner、Search、Crawl、Summarize、Verify、Reflection
 - `interface/` - HTTP 和 MCP 入口
-- `services/` - 共享配置、日志和快照工具
+- `services/` - 共享配置、日志、快照、状态持久化和质量评估工具
 - `tools/` - 搜索、抓取、解析、引用、缓存和限流工具
 - `tests/` - 单元测试和集成测试
+
+## 数据库
+
+如果要启用任务恢复，请先创建 PostgreSQL 表结构。
+
+```bash
+# bash / zsh
+psql "$WEBSEARCH_POSTGRES_DSN" -f migrations/001_create_research_run_state.sql
+
+# PowerShell
+psql $env:WEBSEARCH_POSTGRES_DSN -f migrations/001_create_research_run_state.sql
+```
+
+数据库里会保存两张表：
+
+- `research_run_checkpoints`：每个阶段的历史快照
+- `research_run_latest`：每个 `run_id` 的最新状态索引
 
 ## 校验
 
@@ -122,4 +146,5 @@ python -m pytest -q
 
 - 外部搜索和抓取依赖网络访问以及站点行为。
 - 第一版保持了较轻量的图结构实现，但控制流是明确的，并且已经有测试覆盖。
+- 当前版本已经能把运行状态落到 PostgreSQL，并通过 `run_id` 恢复继续执行。
 - Web UI 会主动渲染人类可读报告，而不是直接输出原始 JSON。
